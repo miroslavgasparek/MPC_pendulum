@@ -12,4 +12,4 @@ and you should be able to read through that, given that you have the understandi
 linear algebra, and dynamical systems.
 
 The implemented dynamical system has the following form: 
-![equation]https://latex.codecogs.com/gif.latex?%5Cbegin%7Balign*%7D%20%5Cfrac%7Bd%7D%7Bdt%7Dx_%7B1%7D%20%26%3D%20x_%7B2%7D%20%5C%5C%20%5Cfrac%7Bd%7D%7Bdt%7Dx_%7B2%7D%20%26%3D%20-%20%5Cfrac%7Bg%7D%7Bl%7D%20sin%28x_%7B1%7D%29%20-%20b%20x_%7B2%7D%20&plus;%20u%20%5Cend%7Balign*%7D
+![equation](https://latex.codecogs.com/gif.latex?%5Cbegin%7Balign*%7D%20%5Cfrac%7Bd%7D%7Bdt%7Dx_%7B1%7D%20%26%3D%20x_%7B2%7D%20%5C%5C%20%5Cfrac%7Bd%7D%7Bdt%7Dx_%7B2%7D%20%26%3D%20-%20%5Cfrac%7Bg%7D%7Bl%7D%20sin%28x_%7B1%7D%29%20-%20b%20x_%7B2%7D%20&plus;%20u%20%5Cend%7Balign*%7D)
