@@ -22,3 +22,4 @@ Where x1 is the angle of the pendulum form the vertical, x2 is the angular veloc
 In this case, we run the simulation for 0.5 s with the prediction horizon of 0.04 s, while the sampling period is 0.001 s. We place quite high weight on the position, medium weight on the angular velocity, and very low weight on the input. Details can be found in the file `runPendulumMPC.m`.
 
 The results of the simulation are displayed below: 
+![alt text]https://github.com/miroslavgasparek/MPC_pendulum/blob/master/pendulum_traj_tracking_MPC.jpg
