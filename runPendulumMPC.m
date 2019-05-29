@@ -1,0 +1,191 @@
+%% 29 May 2019 Miroslav Gasparek
+% Example of the linearized constrained Model Predictive Control (MPC) of 
+% the nonlinear pendulum with the linear damping.
+% 
+% The equations of the pendulum are of the form:
+% 
+%     dx(1)/dt = x(2);
+%     dx(2)/dt = (-g/l)*sin(x(1)) -b*x(2)+ u;
+%
+% where:
+% g is acceleration due to the gravity
+% l is the length of the rod
+% b is the damping coefficient
+% u is the input, the normalized force
+
+% Model Predictive Control scheme can be formulated as an optimization 
+% problem with horizon length np:
+%
+%   Minimize J = 0.5*(X-rr)'*Q*(X-rr) + 0.5u'*R*u = 0.5*u'*H*u + x0*G'*u 
+%   
+%       subject to
+%            cl <= Dcon * x <= ch
+%            ul <=  u <= uh
+%            x(k+1) = f(x(k),u(k))
+%            X = [x(1); x(2);...;x(np)];
+
+clear; clc; close all;
+
+% Global pendulum parameters
+sys.g = 9.81; % m/s^2, Acceleration due to the gravity
+sys.l = 0.1; % m, Length of the rod 
+sys.b = 0.2; % s^-1, Damping coefficient
+
+% Output matrices
+C = eye(2); % We assume that both states are directly observable
+D = [0;0]; % We assume that there is no direct term
+
+% Initial states
+x = [0.001; 0];
+
+%% Constraints
+% The constraints below are inserted in the form of:
+% 
+% cl <= Dcon * x <= ch
+% ul <=  u <= uh
+%
+% Constraints on the angle and angular velocity of the pendulum
+cl = [-inf; -4];
+ch = [inf; 4];
+
+% Constraints are independent, hence Dcon is identity matrix
+Dcon = eye(2);
+
+% Constraints on the input min and max values
+ui=0;         % initial zero cotrol input
+umin =-20; % minimum input value
+umax = 80; % maximum input value
+
+%% MPC simulation parameters
+np = 40;        % horizon length 
+nx = 2;         % number of states 
+nu = 1;         % number of inputs
+no = size(C,1); % number of outputs
+Ts = 0.001;     % step size
+Tfinal = 0.5;     % final time
+
+%% Declare penalty matrices
+Q = [10000, 0; 
+        0  1]; % relative importance of states
+R = 0.00001;  % penalizing weights of control inputs
+P = zeros(2,2); % No terminal cost
+
+%% Reference generation
+% Generating simple step reference of the form [0.5 ; 0]
+% Additional np points provided at the end due to the prediction horizon
+ref =0.5*[ones(1,Tfinal/Ts + np);...
+          zeros(1,Tfinal/Ts + np)];
+
+%% Model generation
+% The model is an anonymous function that represents the equation which describes 
+% the dynamical system in the form of dx/dt =f(x,u), in this case, the
+% nonlinear pendulum with linear damping
+model = @(x,u) genPendulumODE(x,u,sys);
+
+% initialization of vectors for reference and output results 
+rr = zeros(np*nx,1);
+y  = zeros(no,Tfinal/Ts);
+uh = zeros(nu,Tfinal/Ts);
+
+for t=1:Tfinal/Ts
+    
+    % Get the reference trajectory for the whole horizon
+    rr =  ref_for_hor(rr,ref,t,np,nx);
+    
+    % Evaluate the system output
+    y(:,t) = C*x+D*ui;
+    
+    % Simulate one step forward with Runge-Kutta 4 order integrator
+    [x, dx] = RK4(x,ui,Ts,model);
+    
+    % Calculate the linearized and discretized state & input matrices of 
+    % the system at the current state
+    [A, B] = linearizePendulumODE(x, sys, Ts);
+    
+    % Compute stage constraint matrices and vector over the prediction
+    % horizon
+    [Dt,Et,bt]=genStageConstraints(A,B,Dcon,cl,ch,umin,umax);
+    
+    % Compute trajectory constraints matrices and vector over the
+    % prediction horizon
+    [DD,EE,bb]=genTrajectoryConstraints(Dt,Et,bt,np);
+    
+    % Compute prediction matrices over the prediction horizon
+    [Gamma,Phi] = genPrediction(A,B,np);
+
+    % Compute QP constraint matrices over the prediction horizon
+    [F,J,L]=genConstraintMatrices(DD,EE,Gamma,Phi,np);
+    
+    % Compute QP cost matrices
+    [H,G] = genCostMatrices(Gamma,Phi,Q,R,P,np);
+    
+    % Prepare cost and constraint matrices for mpcqpsolver
+    % Calculate the inverse of the lower triangular H. See doc  for 
+    % mpcqpsolver.
+    H = chol(H,'lower');
+    H=(H'\eye(size(H)))';
+    
+    % Set the constraints to be inactive at this point
+    iA = false(size(bb));
+    
+    % Generate the optimal input step
+    [u,~,iA] = genMPController(H,G,F,bb,J,L,x,rr(1:nx),1,iA);
+    ui = u(1:nu);     %providing first solution as input to our system
+    uh(:,t) = ui;     %storing input
+    
+end
+
+%% Plot the results
+% Get the time vector for plotting
+tt = Ts:Ts:Tfinal;
+
+figure(1);
+sgtitle('Trajectory tracking of the nonlinear pendulum through MPC',...
+        'interpreter','latex','fontsize',20)
+% Plot the pendulum's position
+subplot(3,1,1)
+hold on
+plot(tt, ref(1,1:(Tfinal/Ts)),'r--','LineWidth',2)
+plot(tt, cl(1)*ones(1,length(tt)),'k--','LineWidth',2)
+plot(tt, ch(1)*ones(1,length(tt)),'k--','LineWidth',2,'HandleVisibility','off')
+plot(tt,y(1,:),'LineWidth',2)
+xlabel('Time (s)','interpreter','latex','fontsize',15)
+ylabel('$\theta$ [s]','interpreter','latex','fontsize',15)
+title('Pendulum angular position','interpreter','latex','fontsize',20)
+legend('ref. trajectory','constraints','$\theta$ [s]','interpreter','latex',...
+       'location','east','fontsize',12)
+ax = gca;
+ax.YLim = [0, 0.6];
+
+% Plot the pendulum's angular velocity
+subplot(3,1,2)
+hold on
+plot(tt, ref(2,1:(Tfinal/Ts)),'r--','LineWidth',2)
+plot(tt, cl(2)*ones(1,length(tt)),'k--','LineWidth',2)
+plot(tt, ch(2)*ones(1,length(tt)),'k--','LineWidth',2,'HandleVisibility','off')
+plot(tt,y(2,:),'LineWidth',2)
+xlabel('Time (s)','interpreter','latex','fontsize',15)
+ylabel('$\dot{\theta}$ [$s^{-1}$]','interpreter','latex','fontsize',15)
+title('Pendulum angular velocity','interpreter','latex','fontsize',20)
+legend('ref. trajectory','constraints','$\dot{\theta}$ [$s^{-1}$]','interpreter','latex',...
+        'location','northeast','fontsize',12)
+ax = gca;
+ax.YLim = [-5, 5];
+
+% Plot the normalized input force
+subplot(3,1,3)
+hold on
+plot(tt, umin(1)*ones(1,length(tt)),'k--','LineWidth',2)
+plot(tt, umax(1)*ones(1,length(tt)),'k--','LineWidth',2,'HandleVisibility','off')
+plot(tt,uh(:),'LineWidth',2)
+xlabel('Time (s)','interpreter','latex','fontsize',15)
+ylabel('u [$s^{-2}$]','interpreter','latex','fontsize',15)
+title('MPC optimal input force','interpreter','latex','fontsize',20)
+legend('constraints','u [$s^{-2}$]','interpreter','latex','location','southeast','fontsize',12)
+ax = gca;
+ax.YLim = [-30, 100];
+
+fig = gcf;
+fig.Position = [440   157   702   641];
+
+
